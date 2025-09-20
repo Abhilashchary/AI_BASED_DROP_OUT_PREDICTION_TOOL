@@ -70,6 +70,18 @@ export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
         .map(email => email.trim())
         .filter(email => email.length > 0);
 
+      // Validate email addresses on frontend
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const invalidEmails = recipients.filter(email => !emailRegex.test(email));
+      if (invalidEmails.length > 0) {
+        setEmailStatus({
+          type: 'error', 
+          message: `Invalid email addresses: ${invalidEmails.join(', ')}`
+        });
+        setIsSendingEmail(false);
+        return;
+      }
+
       const response = await fetch('http://localhost:3001/send-alerts', {
         method: 'POST',
         headers: {
@@ -99,7 +111,7 @@ export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
       console.error('Email sending error:', error);
       setEmailStatus({
         type: 'error', 
-        message: 'Failed to connect to email server. Make sure the backend is running on port 3001.'
+        message: 'Failed to connect to email server. Make sure the backend is running on port 3001 and .env file is configured.'
       });
     } finally {
       setIsSendingEmail(false);
