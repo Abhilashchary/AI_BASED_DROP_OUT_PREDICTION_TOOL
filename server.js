@@ -11,7 +11,7 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware
-app.use(cors());
+app.use(cors({ origin: '*' })); // allow frontend requests from any origin
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
@@ -25,9 +25,7 @@ const createTransporter = () =>
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS,
     },
-    tls: {
-      rejectUnauthorized: false,
-    },
+    tls: { rejectUnauthorized: false },
   });
 
 // Utility functions
@@ -39,14 +37,14 @@ const generateStudentTable = (students) => {
   const rows = students
     .map(
       (s) => `
-    <tr style="border-bottom:1px solid #ddd;">
-      <td>${s.student_id}</td>
-      <td>${s.attendance_pct}%</td>
-      <td>${s.avg_score}</td>
-      <td>${s.score_trend >= 0 ? '+' : ''}${s.score_trend}</td>
-      <td>$${s.fee_pending}</td>
-      <td>${s.risk_level}</td>
-    </tr>`
+        <tr style="border-bottom:1px solid #ddd;">
+          <td>${s.student_id}</td>
+          <td>${s.attendance_pct}%</td>
+          <td>${s.avg_score}</td>
+          <td>${s.score_trend >= 0 ? '+' : ''}${s.score_trend}</td>
+          <td>$${s.fee_pending}</td>
+          <td>${s.risk_level}</td>
+        </tr>`
     )
     .join('');
 
@@ -63,8 +61,7 @@ const generateStudentTable = (students) => {
         </tr>
       </thead>
       <tbody>${rows}</tbody>
-    </table>
-  `;
+    </table>`;
 };
 
 // Health check
@@ -98,18 +95,21 @@ app.post('/send-alerts', async (req, res) => {
   try {
     const { recipients, subject, students } = req.body;
 
-    if (!recipients || !Array.isArray(recipients) || recipients.length === 0)
+    if (!recipients || !Array.isArray(recipients) || recipients.length === 0) {
       return res.status(400).json({ success: false, error: 'Recipients array is required' });
-
-    if (!students || !Array.isArray(students))
+    }
+    if (!students || !Array.isArray(students)) {
       return res.status(400).json({ success: false, error: 'Students array is required' });
+    }
 
     const invalidEmails = recipients.filter((email) => !validateEmail(email.trim()));
-    if (invalidEmails.length > 0)
+    if (invalidEmails.length > 0) {
       return res.status(400).json({ success: false, error: `Invalid emails: ${invalidEmails.join(', ')}` });
+    }
 
-    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS)
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
       return res.status(500).json({ success: false, error: 'Email credentials not configured in .env' });
+    }
 
     const transporter = createTransporter();
     await transporter.verify();
@@ -125,7 +125,7 @@ app.post('/send-alerts', async (req, res) => {
     });
 
     console.log('Email sent:', info.messageId);
-    res.json({ success: true, messageId: info.messageId });
+    res.json({ success: true, messageId: info.messageId, studentsCount: students.length });
   } catch (err) {
     console.error('Email sending failed:', err);
     res.status(500).json({ success: false, error: err.message });
