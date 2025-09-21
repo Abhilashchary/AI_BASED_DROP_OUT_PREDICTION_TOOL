@@ -1,7 +1,7 @@
 // API Configuration
 export const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
 
-// Email Configuration
+// Email Configuration (for frontend context, not used by backend)
 export const EMAIL_CONFIG = {
   SMTP_HOST: 'smtp.gmail.com',
   SMTP_PORT: 587,
