@@ -310,7 +310,7 @@ app.post('/send-alerts', async (req, res) => {
 });
 
 // Catch all handler for SPA
-app.get('*', (req, res) => {
+app.get('/*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
