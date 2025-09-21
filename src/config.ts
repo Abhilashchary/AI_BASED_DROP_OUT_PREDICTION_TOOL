@@ -1,11 +1,15 @@
-export const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
+// We can remove the API_BASE_URL since we're not making API calls for email anymore.
+
+// Email Configuration (no longer used by frontend)
 export const EMAIL_CONFIG = {
   SMTP_HOST: 'smtp.gmail.com',
   SMTP_PORT: 587,
   SECURE: false
 };
+
+// Application Configuration
 export const APP_CONFIG = {
-  MAX_FILE_SIZE: 10 * 1024 * 1024,
+  MAX_FILE_SIZE: 10 * 1024 * 1024, // 10MB
   SUPPORTED_FILE_TYPES: ['.xlsx', '.xls'],
   RISK_THRESHOLDS: {
     HIGH_RISK: {
