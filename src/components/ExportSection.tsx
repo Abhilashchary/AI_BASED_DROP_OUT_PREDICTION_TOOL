@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ProcessedStudentData } from '../types';
-import { Download, Mail, Settings, Send, CheckCircle, XCircle, Plus, Trash2 } from 'lucide-react';
-import { API_BASE_URL } from '../config';
+import { Download, Mail, Send, CheckCircle, XCircle, Plus, Trash2 } from 'lucide-react';
+// We no longer need to import API_BASE_URL from '../config'
 
 interface ExportSectionProps {
   data: ProcessedStudentData[];
@@ -9,9 +9,8 @@ interface ExportSectionProps {
 
 export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
   const [showEmailConfig, setShowEmailConfig] = useState(false);
-  const [isSendingEmail, setIsSendingEmail] = useState(false);
-  const [emailStatus, setEmailStatus] = useState<{type: 'success' | 'error' | null, message: string}>({type: null, message: ''});
   const [mentorEmails, setMentorEmails] = useState<string[]>(['']);
+  const [emailStatus, setEmailStatus] = useState<{ type: 'success' | 'error' | null, message: string }>({ type: null, message: '' });
 
   const atRiskStudents = data.filter(s => s.risk_level === 'At Risk' || s.risk_level === 'High Risk');
 
@@ -27,7 +26,7 @@ export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
   const exportToCSV = () => {
     try {
       if (atRiskStudents.length === 0) {
-        setEmailStatus({type: 'error', message: 'No at-risk students to export'});
+        setEmailStatus({ type: 'error', message: 'No at-risk students to export' });
         return;
       }
       const headers = ['Student ID', 'Attendance %', 'Average Score', 'Score Trend', 'Fee Pending', 'Risk Level'];
@@ -53,10 +52,10 @@ export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-      setEmailStatus({type: 'success', message: `Successfully exported ${atRiskStudents.length} at-risk students to CSV`});
+      setEmailStatus({ type: 'success', message: `Successfully exported ${atRiskStudents.length} at-risk students to CSV` });
     } catch (error) {
       console.error('CSV Export Error:', error);
-      setEmailStatus({type: 'error', message: 'Failed to export CSV file'});
+      setEmailStatus({ type: 'error', message: 'Failed to export CSV file' });
     }
   };
 
@@ -92,48 +91,52 @@ export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
     return { isValid: true, message: '' };
   };
 
-  const sendEmailToMentors = async () => {
+  const sendEmailToMentors = () => {
     const validation = validateMentorEmails();
     if (!validation.isValid) {
       setEmailStatus({ type: 'error', message: validation.message });
       return;
     }
 
-    setIsSendingEmail(true);
-    setEmailStatus({ type: null, message: '' });
+    const validEmails = mentorEmails.filter(email => email.trim().length > 0).map(email => email.trim());
+    const recipients = validEmails.join(',');
+    const subject = `At-Risk Students Alert - ${new Date().toLocaleDateString()}`;
+    
+    // Create a simple text body
+    const body = `Hello Mentor,
+    
+This is an automated report from the Student Counseling Dashboard.
+    
+The following students have been identified as At-Risk and require your attention:
+    
+Student Details:
+${atRiskStudents.map(s => `
+  - Student ID: ${s.student_id}
+    Attendance: ${s.attendance_pct}%
+    Avg Score: ${s.avg_score}
+    Risk Level: ${s.risk_level}
+`).join('\n')}
+    
+Please review this list and take appropriate action.
+    
+Best regards,
+Your Dashboard`;
 
-    try {
-      const validEmails = mentorEmails.filter(email => email.trim().length > 0);
-      const response = await fetch(`${API_BASE_URL}/send-alerts`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          recipients: validEmails.map(email => email.trim()),
-          subject: `At-Risk Students Alert - ${new Date().toLocaleDateString()}`,
-          students: atRiskStudents
-        })
-      });
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const result = await response.json();
-      if (result.success) {
-        setEmailStatus({
-          type: 'success',
-          message: `Email sent successfully to ${result.recipientsCount} mentor(s). ${result.studentsCount} at-risk students reported.`
-        });
-      } else {
-        setEmailStatus({ type: 'error', message: result.error || 'Failed to send email' });
-      }
-    } catch (error) {
-      console.error('Email sending error:', error);
-      let errorMessage = 'Failed to send email. Check if the backend server is running and configured correctly.';
-      setEmailStatus({ type: 'error', message: errorMessage });
-    } finally {
-      setIsSendingEmail(false);
-    }
+    // Encode the body and subject for the URL
+    const encodedSubject = encodeURIComponent(subject);
+    const encodedBody = encodeURIComponent(body);
+
+    // Build the mailto link
+    const mailtoLink = `mailto:${recipients}?subject=${encodedSubject}&body=${encodedBody}`;
+
+    // Redirect the user
+    window.location.href = mailtoLink;
+
+    // Provide a success message to the user
+    setEmailStatus({
+      type: 'success',
+      message: 'Opening your default email client to send the report.'
+    });
   };
 
   if (data.length === 0) return null;
@@ -208,7 +211,7 @@ export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
           <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
             <h5 className="text-sm font-semibold text-blue-800 mb-2">Note:</h5>
             <p className="text-xs text-blue-700">
-              Email functionality is configured on the server. Please ensure the backend server has valid credentials set in its `.env` file before sending emails.
+              Clicking the "Send Email" button will open your default email client with a pre-populated draft.
             </p>
           </div>
         </div>
@@ -226,20 +229,11 @@ export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
 
         <button
           onClick={sendEmailToMentors}
-          disabled={atRiskStudents.length === 0 || isSendingEmail}
+          disabled={atRiskStudents.length === 0}
           className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
         >
-          {isSendingEmail ? (
-            <>
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-              Sending Email...
-            </>
-          ) : (
-            <>
-              <Send className="w-4 h-4" />
-              Send Email to Mentors
-            </>
-          )}
+          <Send className="w-4 h-4" />
+          Send Email to Mentors
         </button>
       </div>
 
