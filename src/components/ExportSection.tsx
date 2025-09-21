@@ -15,25 +15,21 @@ export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
 
   const atRiskStudents = data.filter(s => s.risk_level === 'At Risk' || s.risk_level === 'High Risk');
 
-  // Clear status message after timeout to prevent memory leak
   useEffect(() => {
     if (emailStatus.type) {
       const timer = setTimeout(() => {
         setEmailStatus({ type: null, message: '' });
-      }, 5000); // Clear after 5 seconds
+      }, 5000);
       return () => clearTimeout(timer);
     }
   }, [emailStatus.type]);
 
-  // CSV Export Function (remains the same as it's safe)
   const exportToCSV = () => {
-    // ... (code is unchanged)
     try {
       if (atRiskStudents.length === 0) {
         setEmailStatus({type: 'error', message: 'No at-risk students to export'});
         return;
       }
-
       const headers = ['Student ID', 'Attendance %', 'Average Score', 'Score Trend', 'Fee Pending', 'Risk Level'];
       const csvRows = [
         headers.join(','),
@@ -46,30 +42,24 @@ export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
           `"${student.risk_level}"`
         ].join(','))
       ];
-
       const csvContent = csvRows.join('\n');
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
-      
       link.setAttribute('href', url);
       link.setAttribute('download', `at_risk_students_${new Date().toISOString().split('T')[0]}.csv`);
       link.style.visibility = 'hidden';
-      
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      
       URL.revokeObjectURL(url);
       setEmailStatus({type: 'success', message: `Successfully exported ${atRiskStudents.length} at-risk students to CSV`});
-      
     } catch (error) {
       console.error('CSV Export Error:', error);
       setEmailStatus({type: 'error', message: 'Failed to export CSV file'});
     }
   };
 
-  // Email Management Functions
   const addEmailField = () => {
     setMentorEmails([...mentorEmails, '']);
   };
@@ -86,7 +76,6 @@ export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
     setMentorEmails(updatedEmails);
   };
 
-  // Email Validation (simplified as there are no credentials to validate on the frontend)
   const validateMentorEmails = (): { isValid: boolean; message: string } => {
     if (atRiskStudents.length === 0) {
       return { isValid: false, message: 'No at-risk students to report' };
@@ -103,7 +92,6 @@ export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
     return { isValid: true, message: '' };
   };
 
-  // Send Email Function
   const sendEmailToMentors = async () => {
     const validation = validateMentorEmails();
     if (!validation.isValid) {
@@ -116,7 +104,6 @@ export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
 
     try {
       const validEmails = mentorEmails.filter(email => email.trim().length > 0);
-      
       const response = await fetch(`${API_BASE_URL}/send-alerts`, {
         method: 'POST',
         headers: {
@@ -128,15 +115,13 @@ export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
           students: atRiskStudents
         })
       });
-
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-
       const result = await response.json();
       if (result.success) {
         setEmailStatus({
-          type: 'success', 
+          type: 'success',
           message: `Email sent successfully to ${result.recipientsCount} mentor(s). ${result.studentsCount} at-risk students reported.`
         });
       } else {
@@ -189,7 +174,6 @@ export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
       {showEmailConfig && (
         <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
           <h4 className="text-md font-semibold text-gray-800 mb-4">Send Report via Email</h4>
-          
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Mentor Email Addresses
