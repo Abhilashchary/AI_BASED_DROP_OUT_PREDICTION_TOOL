@@ -2,14 +2,15 @@ import express from 'express';
 import nodemailer from 'nodemailer';
 import cors from 'cors';
 import bodyParser from 'body-parser';
-import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
+
+// Use dotenv to load environment variables
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -20,10 +21,11 @@ app.use(cors({
   credentials: true
 }));
 app.use(bodyParser.json({ limit: '10mb' }));
-app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
-
-// Serve static files from dist directory if it exists
 app.use(express.static(path.join(__dirname, 'dist')));
+
+// Ensure environment variables are set for email
+const EMAIL_USERNAME = process.env.EMAIL_USERNAME;
+const EMAIL_PASSWORD = process.env.EMAIL_PASSWORD;
 
 // Utility functions
 const validateEmail = (email) => {
@@ -31,14 +33,17 @@ const validateEmail = (email) => {
   return emailRegex.test(email);
 };
 
-const createTransporter = (username, password) => {
+const createTransporter = () => {
+  if (!EMAIL_USERNAME || !EMAIL_PASSWORD) {
+    throw new Error('Email credentials are not set in environment variables.');
+  }
   return nodemailer.createTransport({
     host: 'smtp.gmail.com',
     port: 587,
     secure: false,
     auth: {
-      user: username,
-      pass: password,
+      user: EMAIL_USERNAME,
+      pass: EMAIL_PASSWORD,
     },
     tls: {
       rejectUnauthorized: false
@@ -47,6 +52,7 @@ const createTransporter = (username, password) => {
 };
 
 const generateStudentEmailHTML = (students) => {
+  // ... (HTML generation function remains the same)
   if (!students || students.length === 0) {
     return '<p>No at-risk students found.</p>';
   }
@@ -150,191 +156,80 @@ const generateStudentEmailHTML = (students) => {
 };
 
 // API Routes
-
-// Root route - API status
 app.get('/', (req, res) => {
-  res.json({
-    message: 'AI Drop-out Prediction Dashboard API',
-    status: 'Running',
-    version: '1.0.0',
-    endpoints: {
-      health: '/health',
-      testEmail: '/test-email',
-      sendAlerts: '/send-alerts'
-    },
-    timestamp: new Date().toISOString()
-  });
+  res.json({ message: 'AI Drop-out Prediction Dashboard API', status: 'Running' });
 });
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'OK',
-    timestamp: new Date().toISOString(),
-    server: 'Email Service Running',
-    port: PORT
-  });
-});
-
-// Test email configuration endpoint
-app.post('/test-email', async (req, res) => {
+// Send alerts endpoint - now requires no credentials from the frontend
+app.post('/send-alerts', async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { recipients, subject, students } = req.body;
 
-    if (!username || !password) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Username and password are required' 
-      });
+    if (!recipients || !Array.isArray(recipients) || recipients.length === 0) {
+      return res.status(400).json({ success: false, error: 'Recipients array is required and must not be empty' });
     }
 
-    if (!validateEmail(username)) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Invalid email address format' 
-      });
+    if (!students || !Array.isArray(students)) {
+      return res.status(400).json({ success: false, error: 'Students array is required' });
     }
 
-    const transporter = createTransporter(username, password);
+    const invalidEmails = recipients.filter(email => !validateEmail(email.trim()));
+    if (invalidEmails.length > 0) {
+      return res.status(400).json({ success: false, error: `Invalid recipient email addresses: ${invalidEmails.join(', ')}` });
+    }
+
+    const transporter = createTransporter();
     await transporter.verify();
 
-    res.json({ 
-      success: true, 
-      message: 'Email configuration is valid and ready to use!' 
+    const htmlContent = generateStudentEmailHTML(students);
+
+    const info = await transporter.sendMail({
+      from: `"Student Analytics Dashboard" <${EMAIL_USERNAME}>`,
+      to: recipients.join(', '),
+      subject: subject || 'At-Risk Students Alert',
+      html: htmlContent,
+      text: `At-Risk Students Alert: ${students.length} student(s) require immediate attention.`
     });
+
+    console.log('Email sent successfully:', info.messageId);
+    res.json({ success: true, messageId: info.messageId, studentsCount: students.length, recipientsCount: recipients.length });
+
   } catch (error) {
-    console.error('Email test error:', error);
-    
-    let errorMessage = 'Email configuration test failed';
+    console.error('Email sending failed:', error);
+    let errorMessage = 'Failed to send email';
     if (error.code === 'EAUTH') {
-      errorMessage = 'Authentication failed. Please check your email and app password.';
+      errorMessage = 'Authentication failed. Please check backend environment variables for EMAIL_USERNAME and EMAIL_PASSWORD.';
     } else if (error.code === 'ECONNECTION') {
       errorMessage = 'Connection failed. Please check your internet connection.';
     } else if (error.message) {
       errorMessage = error.message;
     }
 
-    res.status(500).json({ 
-      success: false, 
-      error: errorMessage 
-    });
+    res.status(500).json({ success: false, error: errorMessage });
   }
 });
 
-// Send alerts endpoint
-app.post('/send-alerts', async (req, res) => {
+// A new, safer way to test configuration
+app.get('/test-email-config', async (req, res) => {
   try {
-    const { emailCredentials, recipients, subject, students } = req.body;
-
-    // Validation
-    if (!emailCredentials || !emailCredentials.username || !emailCredentials.password) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Email credentials (username and password) are required' 
-      });
+    if (!EMAIL_USERNAME || !EMAIL_PASSWORD) {
+      return res.status(500).json({ success: false, error: 'Email credentials not set on server.' });
     }
-
-    if (!validateEmail(emailCredentials.username)) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Invalid email address format for credentials' 
-      });
-    }
-
-    if (!recipients || !Array.isArray(recipients) || recipients.length === 0) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Recipients array is required and must not be empty' 
-      });
-    }
-
-    if (!students || !Array.isArray(students)) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Students array is required' 
-      });
-    }
-
-    // Validate recipient emails
-    const invalidEmails = recipients.filter(email => !validateEmail(email.trim()));
-    if (invalidEmails.length > 0) {
-      return res.status(400).json({ 
-        success: false, 
-        error: `Invalid recipient email addresses: ${invalidEmails.join(', ')}` 
-      });
-    }
-
-    // Create transporter with provided credentials
-    const transporter = createTransporter(emailCredentials.username, emailCredentials.password);
-    
-    // Verify connection
+    const transporter = createTransporter();
     await transporter.verify();
-
-    // Generate HTML content
-    const htmlContent = generateStudentEmailHTML(students);
-
-    // Send email
-    const info = await transporter.sendMail({
-      from: `"Student Analytics Dashboard" <${emailCredentials.username}>`,
-      to: recipients.join(', '),
-      subject: subject || 'At-Risk Students Alert',
-      html: htmlContent,
-      text: `At-Risk Students Alert: ${students.length} student(s) require immediate attention. Please check the detailed report.`
-    });
-
-    console.log('Email sent successfully:', info.messageId);
-    res.json({ 
-      success: true, 
-      messageId: info.messageId, 
-      studentsCount: students.length,
-      recipientsCount: recipients.length
-    });
-
+    res.json({ success: true, message: 'Email configuration is valid!' });
   } catch (error) {
-    console.error('Email sending failed:', error);
-    
-    let errorMessage = 'Failed to send email';
-    if (error.code === 'EAUTH') {
-      errorMessage = 'Authentication failed. Please check your email credentials and ensure you are using an app password for Gmail.';
-    } else if (error.code === 'ECONNECTION') {
-      errorMessage = 'Connection failed. Please check your internet connection and try again.';
-    } else if (error.message) {
-      errorMessage = error.message;
-    }
-
-    res.status(500).json({ 
-      success: false, 
-      error: errorMessage 
-    });
+    console.error('Email test error:', error);
+    res.status(500).json({ success: false, error: 'Email configuration test failed. Check server logs.' });
   }
 });
 
-// Catch all handler for SPA
-app.get('/*', (req, res) => {
+// Serve the SPA
+app.use((req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
-});
-// Catch-all SPA fallback
-app.use((req, res, next) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
-});
-
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error('Server error:', err);
-  res.status(500).json({
-    success: false,
-    error: 'Internal server error',
-    message: err.message
-  });
 });
 
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🔗 API endpoint: http://localhost:${PORT}`);
-  console.log(`🔗 Health check: http://localhost:${PORT}/health`);
-  console.log(`📧 Email service ready`);
-  console.log(`⚡ Frontend should connect to: http://localhost:${PORT}`);
-  console.log(`📊 Dashboard API is running and ready to serve requests`);
 });
