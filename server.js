@@ -313,6 +313,11 @@ app.post('/send-alerts', async (req, res) => {
 app.get('/*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
+// Catch-all SPA fallback
+app.use((req, res, next) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+
 
 // Error handling middleware
 app.use((err, req, res, next) => {
