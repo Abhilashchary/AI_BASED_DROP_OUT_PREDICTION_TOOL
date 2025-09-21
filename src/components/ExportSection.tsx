@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ProcessedStudentData } from '../types';
 import { Download, Mail, Settings, Send, CheckCircle, XCircle, Plus, Trash2 } from 'lucide-react';
 import { API_BASE_URL } from '../config';
@@ -11,16 +11,23 @@ export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
   const [showEmailConfig, setShowEmailConfig] = useState(false);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [emailStatus, setEmailStatus] = useState<{type: 'success' | 'error' | null, message: string}>({type: null, message: ''});
-  const [emailCredentials, setEmailCredentials] = useState({
-    username: '',
-    password: ''
-  });
   const [mentorEmails, setMentorEmails] = useState<string[]>(['']);
 
   const atRiskStudents = data.filter(s => s.risk_level === 'At Risk' || s.risk_level === 'High Risk');
 
-  // CSV Export Function
+  // Clear status message after timeout to prevent memory leak
+  useEffect(() => {
+    if (emailStatus.type) {
+      const timer = setTimeout(() => {
+        setEmailStatus({ type: null, message: '' });
+      }, 5000); // Clear after 5 seconds
+      return () => clearTimeout(timer);
+    }
+  }, [emailStatus.type]);
+
+  // CSV Export Function (remains the same as it's safe)
   const exportToCSV = () => {
+    // ... (code is unchanged)
     try {
       if (atRiskStudents.length === 0) {
         setEmailStatus({type: 'error', message: 'No at-risk students to export'});
@@ -56,10 +63,6 @@ export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
       URL.revokeObjectURL(url);
       setEmailStatus({type: 'success', message: `Successfully exported ${atRiskStudents.length} at-risk students to CSV`});
       
-      // Clear success message after 3 seconds
-      setTimeout(() => {
-        setEmailStatus({type: null, message: ''});
-      }, 3000);
     } catch (error) {
       console.error('CSV Export Error:', error);
       setEmailStatus({type: 'error', message: 'Failed to export CSV file'});
@@ -83,51 +86,33 @@ export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
     setMentorEmails(updatedEmails);
   };
 
-  // Email Validation
-  const validateEmail = (email: string): boolean => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email.trim());
-  };
-
-  const validateAllInputs = (): { isValid: boolean; message: string } => {
-    // Check if we have at-risk students
+  // Email Validation (simplified as there are no credentials to validate on the frontend)
+  const validateMentorEmails = (): { isValid: boolean; message: string } => {
     if (atRiskStudents.length === 0) {
       return { isValid: false, message: 'No at-risk students to report' };
     }
-
-    // Check email credentials
-    if (!emailCredentials.username.trim() || !emailCredentials.password.trim()) {
-      return { isValid: false, message: 'Please enter your email credentials' };
-    }
-
-    if (!validateEmail(emailCredentials.username)) {
-      return { isValid: false, message: 'Please enter a valid email address for credentials' };
-    }
-
-    // Check mentor emails
     const validEmails = mentorEmails.filter(email => email.trim().length > 0);
     if (validEmails.length === 0) {
       return { isValid: false, message: 'Please enter at least one mentor email address' };
     }
-
-    const invalidEmails = validEmails.filter(email => !validateEmail(email));
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const invalidEmails = validEmails.filter(email => !emailRegex.test(email.trim()));
     if (invalidEmails.length > 0) {
       return { isValid: false, message: `Invalid email addresses: ${invalidEmails.join(', ')}` };
     }
-
     return { isValid: true, message: '' };
   };
 
   // Send Email Function
   const sendEmailToMentors = async () => {
-    const validation = validateAllInputs();
+    const validation = validateMentorEmails();
     if (!validation.isValid) {
-      setEmailStatus({type: 'error', message: validation.message});
+      setEmailStatus({ type: 'error', message: validation.message });
       return;
     }
 
     setIsSendingEmail(true);
-    setEmailStatus({type: null, message: ''});
+    setEmailStatus({ type: null, message: '' });
 
     try {
       const validEmails = mentorEmails.filter(email => email.trim().length > 0);
@@ -138,10 +123,6 @@ export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          emailCredentials: {
-            username: emailCredentials.username.trim(),
-            password: emailCredentials.password
-          },
           recipients: validEmails.map(email => email.trim()),
           subject: `At-Risk Students Alert - ${new Date().toLocaleDateString()}`,
           students: atRiskStudents
@@ -153,94 +134,18 @@ export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
       }
 
       const result = await response.json();
-
       if (result.success) {
         setEmailStatus({
           type: 'success', 
-          message: `Email sent successfully to ${validEmails.length} mentor(s). ${atRiskStudents.length} at-risk students reported.`
+          message: `Email sent successfully to ${result.recipientsCount} mentor(s). ${result.studentsCount} at-risk students reported.`
         });
-        // Clear password for security
-        setEmailCredentials(prev => ({ ...prev, password: '' }));
-        
-        // Clear success message after 5 seconds
-        setTimeout(() => {
-          setEmailStatus({type: null, message: ''});
-        }, 5000);
       } else {
-        setEmailStatus({
-          type: 'error', 
-          message: result.error || 'Failed to send email'
-        });
+        setEmailStatus({ type: 'error', message: result.error || 'Failed to send email' });
       }
     } catch (error) {
       console.error('Email sending error:', error);
-      let errorMessage = 'Failed to connect to email server. Please check your internet connection and try again.';
-      
-      if (error instanceof TypeError && error.message.includes('fetch')) {
-        errorMessage = 'Cannot connect to server. Please ensure the backend server is running on port 3001.';
-      }
-      
-      setEmailStatus({
-        type: 'error', 
-        message: errorMessage
-      });
-    } finally {
-      setIsSendingEmail(false);
-    }
-  };
-
-  // Test Email Configuration
-  const testEmailConfig = async () => {
-    if (!emailCredentials.username.trim() || !emailCredentials.password.trim()) {
-      setEmailStatus({type: 'error', message: 'Please enter email credentials to test'});
-      return;
-    }
-
-    if (!validateEmail(emailCredentials.username)) {
-      setEmailStatus({type: 'error', message: 'Please enter a valid email address'});
-      return;
-    }
-
-    setIsSendingEmail(true);
-    setEmailStatus({type: null, message: ''});
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/test-email`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          username: emailCredentials.username.trim(),
-          password: emailCredentials.password
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const result = await response.json();
-
-      if (result.success) {
-        setEmailStatus({type: 'success', message: 'Email configuration is valid and ready to use!'});
-        
-        // Clear success message after 3 seconds
-        setTimeout(() => {
-          setEmailStatus({type: null, message: ''});
-        }, 3000);
-      } else {
-        setEmailStatus({type: 'error', message: result.error || 'Email configuration test failed'});
-      }
-    } catch (error) {
-      console.error('Email test error:', error);
-      let errorMessage = 'Failed to test email configuration';
-      
-      if (error instanceof TypeError && error.message.includes('fetch')) {
-        errorMessage = 'Cannot connect to server. Please ensure the backend server is running on port 3001.';
-      }
-      
-      setEmailStatus({type: 'error', message: errorMessage});
+      let errorMessage = 'Failed to send email. Check if the backend server is running and configured correctly.';
+      setEmailStatus({ type: 'error', message: errorMessage });
     } finally {
       setIsSendingEmail(false);
     }
@@ -261,12 +166,11 @@ export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
           onClick={() => setShowEmailConfig(!showEmailConfig)}
           className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
         >
-          <Settings className="w-4 h-4" />
-          {showEmailConfig ? 'Hide Config' : 'Email Config'}
+          <Mail className="w-4 h-4" />
+          {showEmailConfig ? 'Hide Email Config' : 'Email Mentors'}
         </button>
       </div>
 
-      {/* Status Messages */}
       {emailStatus.type && (
         <div className={`mb-4 p-4 rounded-lg flex items-center gap-3 ${
           emailStatus.type === 'success' 
@@ -282,61 +186,10 @@ export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
         </div>
       )}
 
-      {/* Email Configuration Panel */}
       {showEmailConfig && (
         <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-          <h4 className="text-md font-semibold text-gray-800 mb-4">Email Configuration</h4>
+          <h4 className="text-md font-semibold text-gray-800 mb-4">Send Report via Email</h4>
           
-          {/* Email Credentials */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Your Email Address
-              </label>
-              <input
-                type="email"
-                value={emailCredentials.username}
-                onChange={(e) => setEmailCredentials(prev => ({ ...prev, username: e.target.value }))}
-                placeholder="your-email@gmail.com"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                App Password
-              </label>
-              <input
-                type="password"
-                value={emailCredentials.password}
-                onChange={(e) => setEmailCredentials(prev => ({ ...prev, password: e.target.value }))}
-                placeholder="16-character app password"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-          </div>
-
-          {/* Test Email Button */}
-          <div className="mb-4">
-            <button
-              onClick={testEmailConfig}
-              disabled={isSendingEmail}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-            >
-              {isSendingEmail ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Testing...
-                </>
-              ) : (
-                <>
-                  <Settings className="w-4 h-4" />
-                  Test Configuration
-                </>
-              )}
-            </button>
-          </div>
-
-          {/* Mentor Emails */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Mentor Email Addresses
@@ -368,23 +221,16 @@ export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
               Add Another Email
             </button>
           </div>
-
-          {/* Gmail Setup Instructions */}
           <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-            <h5 className="text-sm font-semibold text-blue-800 mb-2">Gmail Setup Instructions:</h5>
-            <ol className="text-xs text-blue-700 space-y-1">
-              <li>1. Enable 2-Factor Authentication on your Gmail account</li>
-              <li>2. Go to Google Account Settings → Security → App Passwords</li>
-              <li>3. Generate an app password for "Mail"</li>
-              <li>4. Use the 16-character app password (not your regular password)</li>
-            </ol>
+            <h5 className="text-sm font-semibold text-blue-800 mb-2">Note:</h5>
+            <p className="text-xs text-blue-700">
+              Email functionality is configured on the server. Please ensure the backend server has valid credentials set in its `.env` file before sending emails.
+            </p>
           </div>
         </div>
       )}
 
-      {/* Action Buttons */}
       <div className="flex flex-wrap gap-4">
-        {/* CSV Export Button */}
         <button
           onClick={exportToCSV}
           disabled={atRiskStudents.length === 0}
@@ -394,7 +240,6 @@ export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
           Export CSV ({atRiskStudents.length} students)
         </button>
 
-        {/* Email Send Button */}
         <button
           onClick={sendEmailToMentors}
           disabled={atRiskStudents.length === 0 || isSendingEmail}
@@ -414,7 +259,6 @@ export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
         </button>
       </div>
 
-      {/* Summary */}
       {atRiskStudents.length > 0 && (
         <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
           <h4 className="text-sm font-semibold text-yellow-800 mb-2">At-Risk Students Summary:</h4>
