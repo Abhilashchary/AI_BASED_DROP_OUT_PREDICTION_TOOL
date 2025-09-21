@@ -3,6 +3,11 @@ import nodemailer from 'nodemailer';
 import cors from 'cors';
 import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
@@ -10,9 +15,15 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware
-app.use(cors({ origin: '*' }));
+app.use(cors({ 
+  origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+  credentials: true
+}));
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
+
+// Serve static files from dist directory if it exists
+app.use(express.static(path.join(__dirname, 'dist')));
 
 // Utility functions
 const validateEmail = (email) => {
@@ -138,12 +149,30 @@ const generateStudentEmailHTML = (students) => {
   `;
 };
 
+// API Routes
+
+// Root route - API status
+app.get('/', (req, res) => {
+  res.json({
+    message: 'AI Drop-out Prediction Dashboard API',
+    status: 'Running',
+    version: '1.0.0',
+    endpoints: {
+      health: '/health',
+      testEmail: '/test-email',
+      sendAlerts: '/send-alerts'
+    },
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({
     status: 'OK',
     timestamp: new Date().toISOString(),
-    server: 'Email Service Running'
+    server: 'Email Service Running',
+    port: PORT
   });
 });
 
@@ -280,10 +309,27 @@ app.post('/send-alerts', async (req, res) => {
   }
 });
 
+// Catch all handler for SPA
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Server error:', err);
+  res.status(500).json({
+    success: false,
+    error: 'Internal server error',
+    message: err.message
+  });
+});
+
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🔗 API endpoint: http://localhost:${PORT}`);
   console.log(`🔗 Health check: http://localhost:${PORT}/health`);
   console.log(`📧 Email service ready`);
   console.log(`⚡ Frontend should connect to: http://localhost:${PORT}`);
+  console.log(`📊 Dashboard API is running and ready to serve requests`);
 });

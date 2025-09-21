@@ -55,6 +55,11 @@ export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
       
       URL.revokeObjectURL(url);
       setEmailStatus({type: 'success', message: `Successfully exported ${atRiskStudents.length} at-risk students to CSV`});
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => {
+        setEmailStatus({type: null, message: ''});
+      }, 3000);
     } catch (error) {
       console.error('CSV Export Error:', error);
       setEmailStatus({type: 'error', message: 'Failed to export CSV file'});
@@ -143,6 +148,10 @@ export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
         })
       });
 
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
       const result = await response.json();
 
       if (result.success) {
@@ -152,6 +161,11 @@ export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
         });
         // Clear password for security
         setEmailCredentials(prev => ({ ...prev, password: '' }));
+        
+        // Clear success message after 5 seconds
+        setTimeout(() => {
+          setEmailStatus({type: null, message: ''});
+        }, 5000);
       } else {
         setEmailStatus({
           type: 'error', 
@@ -160,9 +174,15 @@ export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
       }
     } catch (error) {
       console.error('Email sending error:', error);
+      let errorMessage = 'Failed to connect to email server. Please check your internet connection and try again.';
+      
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        errorMessage = 'Cannot connect to server. Please ensure the backend server is running on port 3001.';
+      }
+      
       setEmailStatus({
         type: 'error', 
-        message: 'Failed to connect to email server. Please check your internet connection and try again.'
+        message: errorMessage
       });
     } finally {
       setIsSendingEmail(false);
@@ -196,16 +216,31 @@ export const ExportSection: React.FC<ExportSectionProps> = ({ data }) => {
         })
       });
 
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
       const result = await response.json();
 
       if (result.success) {
         setEmailStatus({type: 'success', message: 'Email configuration is valid and ready to use!'});
+        
+        // Clear success message after 3 seconds
+        setTimeout(() => {
+          setEmailStatus({type: null, message: ''});
+        }, 3000);
       } else {
         setEmailStatus({type: 'error', message: result.error || 'Email configuration test failed'});
       }
     } catch (error) {
       console.error('Email test error:', error);
-      setEmailStatus({type: 'error', message: 'Failed to test email configuration'});
+      let errorMessage = 'Failed to test email configuration';
+      
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        errorMessage = 'Cannot connect to server. Please ensure the backend server is running on port 3001.';
+      }
+      
+      setEmailStatus({type: 'error', message: errorMessage});
     } finally {
       setIsSendingEmail(false);
     }
